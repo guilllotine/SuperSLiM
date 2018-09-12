@@ -19,19 +19,21 @@ public class LinearSLM extends SectionLayoutManager {
 
         int areaAbove = 0;
         for (int position = sd.firstPosition + 1;
-                areaAbove < sd.headerHeight && position < firstVisiblePosition;
+                areaAbove < sd.getHeaderSize() && position < firstVisiblePosition;
                 position++) {
             // Look to see if the header overlaps with the displayed area of the mSection.
             LayoutState.View child = state.getView(position);
             measureChild(child, sd);
 
-            areaAbove += mLayoutManager.getDecoratedMeasuredHeight(child.view);
+            areaAbove += mLayoutManager.isVerticalOrientation()
+                    ? mLayoutManager.getDecoratedMeasuredHeight(child.view)
+                    : mLayoutManager.getDecoratedMeasuredWidth(child.view);
             state.cacheView(position, child.view);
         }
 
-        if (areaAbove == sd.headerHeight) {
+        if (areaAbove == sd.getHeaderSize()) {
             return 0;
-        } else if (areaAbove > sd.headerHeight) {
+        } else if (areaAbove > sd.getHeaderSize()) {
             return 1;
         } else {
             return -areaAbove;
@@ -92,8 +94,9 @@ public class LinearSLM extends SectionLayoutManager {
         // Work out offset to marker line by measuring items from the end. If section height is less
         // than min height, then adjust marker line and then lay out items.
         int measuredPositionsMarker = -1;
-        int sectionHeight = 0;
-        int minHeightOffset = 0;
+        int sectionSize = 0;
+        int minSizeOffset = 0;
+        boolean isVertical = mLayoutManager.isVerticalOrientation();
         if (applyMinHeight) {
             for (int i = anchorPosition; i >= 0; i--) {
                 LayoutState.View measure = state.getView(i);
@@ -108,21 +111,25 @@ public class LinearSLM extends SectionLayoutManager {
                 }
 
                 measureChild(measure, sd);
-                sectionHeight += mLayoutManager.getDecoratedMeasuredHeight(measure.view);
+                if (isVertical) {
+                    sectionSize += mLayoutManager.getDecoratedMeasuredHeight(measure.view);
+                } else {
+                    sectionSize += mLayoutManager.getDecoratedMeasuredWidth(measure.view);
+                }
                 measuredPositionsMarker = i;
-                if (sectionHeight >= sd.minimumHeight) {
+                if (sectionSize >= sd.getMinimumSize()) {
                     break;
                 }
             }
 
-            if (sectionHeight < sd.minimumHeight) {
-                minHeightOffset = sectionHeight - sd.minimumHeight;
-                markerLine += minHeightOffset;
+            if (sectionSize < sd.getMinimumSize()) {
+                minSizeOffset = sectionSize - sd.getMinimumSize();
+                markerLine += minSizeOffset;
             }
         }
 
         for (int i = anchorPosition; i >= 0; i--) {
-            if (markerLine - minHeightOffset <= leadingEdge) {
+            if (markerLine - minSizeOffset <= leadingEdge) {
                 break;
             }
 
@@ -152,7 +159,12 @@ public class LinearSLM extends SectionLayoutManager {
     @Override
     public int finishFillToEnd(int leadingEdge, View anchor, SectionData sd, LayoutState state) {
         final int anchorPosition = mLayoutManager.getPosition(anchor);
-        final int markerLine = mLayoutManager.getDecoratedBottom(anchor);
+        int markerLine;
+        if (mLayoutManager.isVerticalOrientation()) {
+            markerLine = mLayoutManager.getDecoratedBottom(anchor);
+        } else {
+            markerLine = mLayoutManager.getDecoratedRight(anchor);
+        }
 
         return fillToEnd(leadingEdge, markerLine, anchorPosition + 1, sd, state);
     }
@@ -160,34 +172,57 @@ public class LinearSLM extends SectionLayoutManager {
     @Override
     public int finishFillToStart(int leadingEdge, View anchor, SectionData sd, LayoutState state) {
         final int anchorPosition = mLayoutManager.getPosition(anchor);
-        final int markerLine = mLayoutManager.getDecoratedTop(anchor);
-
+        int markerLine;
+        if (mLayoutManager.isVerticalOrientation()) {
+            markerLine = mLayoutManager.getDecoratedTop(anchor);
+        } else {
+            markerLine = mLayoutManager.getDecoratedLeft(anchor);
+        }
         return fillToStart(leadingEdge, markerLine, anchorPosition - 1, sd, state);
     }
 
     private int layoutChild(LayoutState.View child, int markerLine,
             LayoutManager.Direction direction, SectionData sd, LayoutState state) {
+        boolean isVertical = mLayoutManager.isVerticalOrientation();
         final int height = mLayoutManager.getDecoratedMeasuredHeight(child.view);
         final int width = mLayoutManager.getDecoratedMeasuredWidth(child.view);
 
-        int left = state.isLTR ? sd.contentStart : sd.contentEnd;
-        int right = left + width;
-        int top;
-        int bottom;
+        int left = isVertical ? state.isLTR ? sd.contentStart : sd.contentEnd : 0;
+        int right = isVertical ? left + width : 0;
+        int top = isVertical ? 0 : state.isLTR ? sd.contentStart : sd.contentEnd;
+        int bottom = isVertical ? 0 : top + height;
 
         if (direction == LayoutManager.Direction.END) {
-            top = markerLine;
-            bottom = top + height;
+            if (isVertical) {
+                top = markerLine;
+                bottom = top + height;
+            } else {
+                left = markerLine;
+                right = left + width;
+            }
         } else {
-            bottom = markerLine;
-            top = bottom - height;
+            if (isVertical) {
+                bottom = markerLine;
+                top = bottom - height;
+            } else {
+                right = markerLine;
+                left = right - width;
+            }
         }
         mLayoutManager.layoutDecorated(child.view, left, top, right, bottom);
 
         if (direction == LayoutManager.Direction.END) {
-            markerLine = mLayoutManager.getDecoratedBottom(child.view);
+            if (isVertical) {
+                markerLine = mLayoutManager.getDecoratedBottom(child.view);
+            } else {
+                markerLine = mLayoutManager.getDecoratedRight(child.view);
+            }
         } else {
-            markerLine = mLayoutManager.getDecoratedTop(child.view);
+            if (isVertical) {
+                markerLine = mLayoutManager.getDecoratedTop(child.view);
+            } else {
+                markerLine = mLayoutManager.getDecoratedLeft(child.view);
+            }
         }
 
         return markerLine;

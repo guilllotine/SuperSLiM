@@ -1,9 +1,7 @@
 package com.tonicartos.superslim;
 
 import android.content.Context;
-import android.support.v7.widget.RecyclerView;
 import android.util.AttributeSet;
-import android.util.Log;
 import android.util.SparseArray;
 import android.view.View;
 
@@ -29,7 +27,7 @@ public abstract class SectionLayoutManager {
      * +ve number indicates the header is offscreen.
      */
     public abstract int computeHeaderOffset(int firstVisiblePosition, SectionData sd,
-            LayoutState state);
+                                            LayoutState state);
 
     /**
      * Fill section content towards the end.
@@ -42,10 +40,10 @@ public abstract class SectionLayoutManager {
      * @return Line to which content has been filled.
      */
     public abstract int fillToEnd(int leadingEdge, int markerLine, int anchorPosition,
-            SectionData sd, LayoutState state);
+                                  SectionData sd, LayoutState state);
 
     public abstract int fillToStart(int leadingEdge, int markerLine, int anchorPosition,
-            SectionData sd, LayoutState state);
+                                    SectionData sd, LayoutState state);
 
     /**
      * Find the position of the first completely visible item of this section.
@@ -113,10 +111,10 @@ public abstract class SectionLayoutManager {
      * @return Line to which content has been filled.
      */
     public abstract int finishFillToEnd(int leadingEdge, View anchor, SectionData sd,
-            LayoutState state);
+                                        LayoutState state);
 
     public abstract int finishFillToStart(int leadingEdge, View anchor, SectionData sd,
-            LayoutState state);
+                                          LayoutState state);
 
     public LayoutManager.LayoutParams generateLayoutParams(LayoutManager.LayoutParams params) {
         return params;
@@ -139,10 +137,20 @@ public abstract class SectionLayoutManager {
      * @return First completely visible item or null.
      */
     public View getFirstCompletelyVisibleView(int sectionFirstPosition, boolean skipHeader) {
-        final int topEdge = mLayoutManager.getClipToPadding() ? mLayoutManager.getPaddingTop() : 0;
-        final int bottomEdge = mLayoutManager.getClipToPadding() ?
-                mLayoutManager.getHeight() - mLayoutManager.getPaddingBottom() :
-                mLayoutManager.getHeight();
+        boolean isVertical = mLayoutManager.isVerticalOrientation();
+        int startEdge;
+        int endEdge;
+        if (isVertical) {
+            startEdge = mLayoutManager.getClipToPadding() ? mLayoutManager.getPaddingTop() : 0;
+            endEdge = mLayoutManager.getClipToPadding()
+                    ? mLayoutManager.getHeight() - mLayoutManager.getPaddingBottom()
+                    : mLayoutManager.getHeight();
+        } else {
+            startEdge = mLayoutManager.getClipToPadding() ? mLayoutManager.getPaddingStart() : 0;
+            endEdge = mLayoutManager.getClipToPadding()
+                    ? mLayoutManager.getWidth() - mLayoutManager.getPaddingEnd()
+                    : mLayoutManager.getWidth();
+        }
 
         int lookAt = 0;
         int childCount = mLayoutManager.getChildCount();
@@ -154,12 +162,20 @@ public abstract class SectionLayoutManager {
 
             final View view = mLayoutManager.getChildAt(lookAt);
 
-            final boolean topInside = mLayoutManager.getDecoratedTop(view) >= topEdge;
-            final boolean bottomInside = mLayoutManager.getDecoratedBottom(view) <= bottomEdge;
+            boolean startInside;
+            boolean endInside;
+
+            if (isVertical) {
+                startInside = mLayoutManager.getDecoratedTop(view) >= startEdge;
+                endInside = mLayoutManager.getDecoratedBottom(view) <= endEdge;
+            } else {
+                startInside = mLayoutManager.getDecoratedLeft(view) >= startEdge;
+                endInside = mLayoutManager.getDecoratedRight(view) <= endEdge;
+            }
 
             LayoutManager.LayoutParams lp = (LayoutManager.LayoutParams) view.getLayoutParams();
             if (sectionFirstPosition == lp.getTestedFirstPosition()) {
-                if (topInside && bottomInside) {
+                if (startInside && endInside) {
                     if (!lp.isHeader || !skipHeader) {
                         return view;
                     } else {
@@ -231,7 +247,11 @@ public abstract class SectionLayoutManager {
                 continue;
             }
             // A more interesting layout would have to do something more here.
-            return mLayoutManager.getDecoratedTop(child);
+            if (mLayoutManager.isVerticalOrientation()) {
+                return mLayoutManager.getDecoratedTop(child);
+            } else {
+                return mLayoutManager.getDecoratedRight(child);
+            }
         }
         return defaultEdge;
     }
@@ -244,10 +264,21 @@ public abstract class SectionLayoutManager {
      * @return Last completely visible item or null.
      */
     public View getLastCompletelyVisibleView(int sectionFirstPosition) {
-        final int topEdge = mLayoutManager.getClipToPadding() ? mLayoutManager.getPaddingTop() : 0;
-        final int bottomEdge = mLayoutManager.getClipToPadding() ?
-                mLayoutManager.getHeight() - mLayoutManager.getPaddingBottom() :
-                mLayoutManager.getHeight();
+        boolean isVertical = mLayoutManager.isVerticalOrientation();
+        int startEdge;
+        int endEdge;
+
+        if (isVertical) {
+            startEdge = mLayoutManager.getClipToPadding() ? mLayoutManager.getPaddingTop() : 0;
+            endEdge = mLayoutManager.getClipToPadding()
+                    ? mLayoutManager.getHeight() - mLayoutManager.getPaddingBottom()
+                    : mLayoutManager.getHeight();
+        } else {
+            startEdge = mLayoutManager.getClipToPadding() ? mLayoutManager.getPaddingStart() : 0;
+            endEdge = mLayoutManager.getClipToPadding()
+                    ? mLayoutManager.getWidth() - mLayoutManager.getPaddingEnd()
+                    : mLayoutManager.getWidth();
+        }
 
         int lookAt = mLayoutManager.getChildCount() - 1;
         View candidate = null;
@@ -258,12 +289,20 @@ public abstract class SectionLayoutManager {
 
             final View view = mLayoutManager.getChildAt(lookAt);
 
-            final boolean topInside = mLayoutManager.getDecoratedTop(view) >= topEdge;
-            final boolean bottomInside = mLayoutManager.getDecoratedBottom(view) <= bottomEdge;
+            boolean startInside;
+            boolean endInside;
+
+            if (isVertical) {
+                startInside = mLayoutManager.getDecoratedTop(view) >= startEdge;
+                endInside = mLayoutManager.getDecoratedBottom(view) <= endEdge;
+            } else {
+                startInside = mLayoutManager.getDecoratedLeft(view) >= startEdge;
+                endInside = mLayoutManager.getDecoratedRight(view) <= endEdge;
+            }
 
             LayoutManager.LayoutParams lp = (LayoutManager.LayoutParams) view.getLayoutParams();
             if (sectionFirstPosition == lp.getTestedFirstPosition()) {
-                if (topInside && bottomInside) {
+                if (startInside && endInside) {
                     if (!lp.isHeader) {
                         return view;
                     } else {
@@ -335,7 +374,11 @@ public abstract class SectionLayoutManager {
                 continue;
             }
             // A more interesting layout would have to do something more here.
-            return mLayoutManager.getDecoratedBottom(child);
+            if (mLayoutManager.isVerticalOrientation()) {
+                return mLayoutManager.getDecoratedBottom(child);
+            } else {
+                return mLayoutManager.getDecoratedRight(child);
+            }
         }
         return defaultEdge;
     }
@@ -357,8 +400,7 @@ public abstract class SectionLayoutManager {
     public int howManyMissingBelow(int lastPosition, SparseArray<Boolean> positionsOffscreen) {
         int itemsSkipped = 0;
         int itemsFound = 0;
-        for (int i = lastPosition;
-                itemsFound < positionsOffscreen.size(); i--) {
+        for (int i = lastPosition; itemsFound < positionsOffscreen.size(); i--) {
             if (positionsOffscreen.get(i, false)) {
                 itemsFound += 1;
             } else {
@@ -374,7 +416,7 @@ public abstract class SectionLayoutManager {
     }
 
     protected int addView(LayoutState.View child, int position, LayoutManager.Direction direction,
-            LayoutState state) {
+                          LayoutState state) {
         int addIndex;
         if (direction == LayoutManager.Direction.START) {
             addIndex = 0;

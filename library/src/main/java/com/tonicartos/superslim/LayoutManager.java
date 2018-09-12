@@ -9,18 +9,16 @@ import android.os.Build;
 import android.os.Parcel;
 import android.os.Parcelable;
 import android.support.annotation.IntDef;
-import android.support.annotation.NonNull;
 import android.support.annotation.Nullable;
 import android.support.v7.widget.LinearSmoothScroller;
+import android.support.v7.widget.OrientationHelper;
 import android.support.v7.widget.RecyclerView;
 import android.text.TextUtils;
 import android.util.AttributeSet;
 import android.util.Log;
 import android.util.SparseArray;
 import android.util.TypedValue;
-import android.view.FrameStats;
 import android.view.View;
-import android.view.ViewDebug;
 import android.view.ViewGroup;
 
 import java.lang.annotation.Retention;
@@ -59,10 +57,17 @@ public class LayoutManager extends RecyclerView.LayoutManager {
 
     private boolean mSmoothScrollEnabled = true;
 
-    public LayoutManager(Context context) {
+    private int mOrientation = OrientationHelper.VERTICAL;
+
+    public LayoutManager(Context context, int orientation) {
         mLinearSlm = new LinearSLM(this);
         mGridSlm = new GridSLM(this, context);
         mSlms = new HashMap<>();
+        mOrientation = orientation;
+    }
+
+    public LayoutManager(Context context) {
+        this(context, OrientationHelper.VERTICAL);
     }
 
     LayoutManager(Builder builder) {
@@ -116,17 +121,26 @@ public class LayoutManager extends RecyclerView.LayoutManager {
             return firstVisibleView;
         }
 
-        final int topEdge = getClipToPadding() ? getPaddingTop() : 0;
-        final int bottomEdge = getClipToPadding() ? getHeight() - getPaddingBottom() : getHeight();
+        int startEdge;
+        int endEdge;
 
-        final int headerTop = getDecoratedTop(header);
-        final int headerBottom = getDecoratedBottom(header);
+        if (isVerticalOrientation()) {
+            startEdge = getClipToPadding() ? getPaddingTop() : 0;
+            endEdge = getClipToPadding() ? getHeight() - getPaddingBottom() : getHeight();
+        } else {
+            startEdge = getClipToPadding() ? getPaddingStart() : 0;
+            endEdge = getClipToPadding() ? getWidth() - getPaddingEnd() : getWidth();
+        }
 
-        if (headerTop < topEdge || bottomEdge < headerBottom) {
+        int headerStart = isVerticalOrientation() ? getDecoratedTop(header) : getDecoratedLeft(header);
+        int headerEnd = isVerticalOrientation() ? getDecoratedBottom(header) : getDecoratedRight(header);
+
+        if (headerStart < startEdge || endEdge < headerEnd) {
             return firstVisibleView;
         }
 
-        if (headerTop < getDecoratedTop(firstVisibleView)) {
+        int decoratedEnd = isVerticalOrientation() ? getDecoratedTop(firstVisibleView) : getDecoratedLeft(firstVisibleView);
+        if (headerStart < decoratedEnd) {
             return header;
         }
 
@@ -165,13 +179,19 @@ public class LayoutManager extends RecyclerView.LayoutManager {
             return firstVisibleView;
         }
 
-        if (getDecoratedBottom(first) <= getDecoratedTop(firstVisibleView)) {
+        int endOfFirst = isVerticalOrientation() ? getDecoratedBottom(first) : getDecoratedRight(first);
+        int startOfFirstVisible = isVerticalOrientation() ? getDecoratedTop(firstVisibleView) : getDecoratedLeft(firstVisibleView);
+        if (endOfFirst <= startOfFirstVisible) {
             return first;
         }
 
+        boolean isStartOfViewMatch = isVerticalOrientation()
+                ? getDecoratedTop(first) == getDecoratedTop(firstVisibleView)
+                : getDecoratedLeft(first) == getDecoratedLeft(firstVisibleView);
+
         LayoutParams firstParams = (LayoutParams) first.getLayoutParams();
         if ((!firstParams.isHeaderInline() || firstParams.isHeaderOverlay())
-                && getDecoratedTop(first) == getDecoratedTop(firstVisibleView)) {
+                && isStartOfViewMatch) {
             return first;
         }
 
@@ -329,7 +349,7 @@ public class LayoutManager extends RecyclerView.LayoutManager {
 
     @Override
     public int scrollVerticallyBy(int dy, RecyclerView.Recycler recycler,
-            RecyclerView.State state) {
+                                  RecyclerView.State state) {
         int numChildren = getChildCount();
         if (numChildren == 0) {
             return 0;
@@ -383,7 +403,62 @@ public class LayoutManager extends RecyclerView.LayoutManager {
 
     @Override
     public boolean canScrollVertically() {
-        return true;
+        return isVerticalOrientation();
+    }
+
+    @Override
+    public int scrollHorizontallyBy(int dx, RecyclerView.Recycler recycler, RecyclerView.State state) {
+        int numChildren = getChildCount();
+        if (numChildren == 0) {
+            return 0;
+        }
+
+        LayoutState layoutState = new LayoutState(this, recycler, state);
+
+        final Direction direction = dx > 0 ? Direction.END : Direction.START;
+        final boolean isDirectionEnd = direction == Direction.END;
+        final int width = getWidth();
+
+        final int leadingEdge = isDirectionEnd ? width + dx : dx;
+
+        if (isDirectionEnd) {
+            final View end = getAnchorAtEnd();
+            LayoutParams params = (LayoutParams) end.getLayoutParams();
+            SectionLayoutManager slm = getSlm(params);
+            final int endEdge = slm.getLowestEdge(
+                    params.getTestedFirstPosition(), getChildCount() - 1, getDecoratedRight(end));
+            if (endEdge < width - getPaddingRight() &&
+                    getPosition(end) == (state.getItemCount() - 1)) {
+                return 0;
+            }
+        }
+
+        final int fillEdge = fillUntil(leadingEdge, direction, layoutState);
+
+        final int delta;
+        if (isDirectionEnd) {
+            // Add padding so we scroll to inset area at scroll end.
+            int fillDelta = fillEdge - width + getPaddingRight();
+            delta = fillDelta < dx ? fillDelta : dx;
+        } else {
+            int fillDelta = fillEdge - getPaddingLeft();
+            delta = fillDelta > dx ? fillDelta : dx;
+        }
+
+        if (delta != 0) {
+            offsetChildrenHorizontal(-delta);
+
+            trimTail(isDirectionEnd ? Direction.START : Direction.END, layoutState);
+        }
+
+        layoutState.recycleCache();
+
+        return delta;
+    }
+
+    @Override
+    public boolean canScrollHorizontally() {
+        return !isVerticalOrientation();
     }
 
     @Override
@@ -400,7 +475,7 @@ public class LayoutManager extends RecyclerView.LayoutManager {
 
     @Override
     public void smoothScrollToPosition(final RecyclerView recyclerView, RecyclerView.State state,
-            final int position) {
+                                       final int position) {
         if (position < 0 || getItemCount() <= position) {
             Log.e("SuperSLiM.LayoutManager", "Ignored smooth scroll to " + position +
                     " as it is not within the item range 0 - " + getItemCount());
@@ -435,9 +510,6 @@ public class LayoutManager extends RecyclerView.LayoutManager {
                     @Override
                     public int calculateDyToMakeVisible(View view, int snapPreference) {
                         final RecyclerView.LayoutManager layoutManager = getLayoutManager();
-                        if (!layoutManager.canScrollVertically()) {
-                            return 0;
-                        }
                         final RecyclerView.LayoutParams params = (RecyclerView.LayoutParams)
                                 view.getLayoutParams();
                         final int top = layoutManager.getDecoratedTop(view) - params.topMargin;
@@ -449,6 +521,22 @@ public class LayoutManager extends RecyclerView.LayoutManager {
                                 .getPaddingBottom();
                         int dy = calculateDtToFit(top, bottom, start, end, snapPreference);
                         return dy == 0 ? 1 : dy;
+                    }
+
+                    @Override
+                    public int calculateDxToMakeVisible(View view, int snapPreference) {
+                        final RecyclerView.LayoutManager layoutManager = getLayoutManager();
+                        final RecyclerView.LayoutParams params = (RecyclerView.LayoutParams)
+                                view.getLayoutParams();
+                        final int left = layoutManager.getDecoratedLeft(view) - params.leftMargin;
+                        final int right = layoutManager.getDecoratedRight(view)
+                                + params.rightMargin;
+                        final int start = getPosition(view) == 0 ? layoutManager.getPaddingStart()
+                                : 0;
+                        final int end = layoutManager.getWidth() - layoutManager
+                                .getPaddingEnd();
+                        int dx = calculateDtToFit(left, right, start, end, snapPreference);
+                        return dx == 0 ? 1 : dx;
                     }
 
                     @Override
@@ -529,7 +617,7 @@ public class LayoutManager extends RecyclerView.LayoutManager {
             mRequestPositionOffset = 0;
         } else {
             mRequestPosition = getPosition(view);
-            mRequestPositionOffset = getDecoratedTop(view);
+            mRequestPositionOffset = isVerticalOrientation() ? getDecoratedTop(view) : getDecoratedLeft(view);
         }
     }
 
@@ -593,6 +681,50 @@ public class LayoutManager extends RecyclerView.LayoutManager {
     }
 
     @Override
+    public int computeHorizontalScrollExtent(RecyclerView.State state) {
+        if (getChildCount() == 0 || state.getItemCount() == 0) {
+            return 0;
+        }
+
+        if (!mSmoothScrollEnabled) {
+            return getChildCount();
+        }
+
+        float contentInView = getChildCount();
+
+        // Work out fraction of content lost off top and bottom.
+        contentInView -= getFractionOfContentAbove(state, true);
+        contentInView -= getFractionOfContentBelow(state, true);
+
+        return (int) (contentInView / state.getItemCount() * getWidth());
+    }
+
+    @Override
+    public int computeHorizontalScrollOffset(RecyclerView.State state) {
+        if (getChildCount() == 0 || state.getItemCount() == 0) {
+            return 0;
+        }
+
+        final View child = getChildAt(0);
+        if (!mSmoothScrollEnabled) {
+            return getPosition(child);
+        }
+
+        float contentAbove = getPosition(child);
+        contentAbove += getFractionOfContentAbove(state, false);
+        return (int) (contentAbove / state.getItemCount() * getWidth());
+    }
+
+    @Override
+    public int computeHorizontalScrollRange(RecyclerView.State state) {
+        if (!mSmoothScrollEnabled) {
+            return state.getItemCount();
+        }
+
+        return getWidth();
+    }
+
+    @Override
     public Parcelable onSaveInstanceState() {
         SavedState state = new SavedState();
         View view = getAnchorChild();
@@ -601,7 +733,7 @@ public class LayoutManager extends RecyclerView.LayoutManager {
             state.anchorOffset = 0;
         } else {
             state.anchorPosition = getPosition(view);
-            state.anchorOffset = getDecoratedTop(view);
+            state.anchorOffset = isVerticalOrientation() ? getDecoratedTop(view) : getDecoratedLeft(view);
         }
         return state;
     }
@@ -622,17 +754,18 @@ public class LayoutManager extends RecyclerView.LayoutManager {
      * @return Borderline.
      */
     int getBorderLine(View anchorView, Direction direction) {
+        boolean isVertical = isVerticalOrientation();
         int borderline;
         if (anchorView == null) {
             if (direction == Direction.START) {
-                borderline = getPaddingBottom();
+                borderline = isVertical ? getPaddingBottom() : getPaddingEnd();
             } else {
-                borderline = getPaddingTop();
+                borderline = isVertical ? getPaddingTop() : getPaddingStart();
             }
         } else if (direction == Direction.START) {
-            borderline = getDecoratedBottom(anchorView);
+            borderline = isVertical ? getDecoratedBottom(anchorView) : getDecoratedRight(anchorView);
         } else {
-            borderline = getDecoratedTop(anchorView);
+            borderline = isVertical ? getDecoratedTop(anchorView) : getDecoratedLeft(anchorView);
         }
         return borderline;
     }
@@ -641,27 +774,33 @@ public class LayoutManager extends RecyclerView.LayoutManager {
         // Width to leave for the mSection to which this header belongs. Only applies if the
         // header is being laid out adjacent to the mSection.
         int unavailableWidth = 0;
+        int unavailableHeight = 0;
         LayoutParams lp = (LayoutParams) header.getLayoutParams();
         int recyclerWidth = getWidth() - getPaddingStart() - getPaddingEnd();
-        if (!lp.isHeaderOverlay()) {
+        int recyclerHeight = getHeight() - getPaddingTop() - getPaddingBottom();
+        boolean isVertical = isVerticalOrientation();
+        if (!lp.isHeaderOverlay() && isVertical) {
             if (lp.isHeaderStartAligned() && !lp.headerStartMarginIsAuto) {
                 unavailableWidth = recyclerWidth - lp.headerMarginStart;
             } else if (lp.isHeaderEndAligned() && !lp.headerEndMarginIsAuto) {
                 unavailableWidth = recyclerWidth - lp.headerMarginEnd;
             }
+        } else if (!lp.isHeaderOverlay() && !isVertical) {
+            if (lp.isHeaderStartAligned() && !lp.headerStartMarginIsAuto) {
+                unavailableHeight = recyclerHeight - lp.headerMarginStart;
+            } else if (lp.isHeaderEndAligned() && !lp.headerEndMarginIsAuto) {
+                unavailableHeight = recyclerHeight - lp.headerMarginEnd;
+            }
         }
-        measureChildWithMargins(header, unavailableWidth, 0);
+        measureChildWithMargins(header, unavailableWidth, unavailableHeight);
     }
 
     private void attachHeaderForStart(View header, int leadingEdge, SectionData sd,
-            LayoutState state) {
-        if (state.getCachedView(sd.firstPosition) != null
-                && getDecoratedBottom(header) > leadingEdge) {
+                                      LayoutState state) {
+        boolean isEndMore = getDecoratedBottom(header) > leadingEdge || getDecoratedLeft(header) > leadingEdge;
+        if (state.getCachedView(sd.firstPosition) != null && isEndMore) {
             addView(header, findLastIndexForSection(sd.firstPosition) + 1);
             state.decacheView(sd.firstPosition);
-//        } else {
-//            detachView(header);
-//            attachView(header, findLastIndexForSection(sd.firstPosition) + 1);
         }
     }
 
@@ -750,7 +889,9 @@ public class LayoutManager extends RecyclerView.LayoutManager {
             if (header.wasCached) {
                 state.decacheView(sd.firstPosition);
             }
-            markerLine = Math.max(getDecoratedBottom(header.view), markerLine);
+            markerLine = isVerticalOrientation()
+                    ? Math.max(getDecoratedBottom(header.view), markerLine)
+                    : Math.max(getDecoratedRight(header.view), markerLine);
         }
 
         return fillNextSectionToEnd(leadingEdge, markerLine, state);
@@ -799,7 +940,7 @@ public class LayoutManager extends RecyclerView.LayoutManager {
 
         // Fill out section.
         SectionLayoutManager slm = getSlm(sd);
-        int sectionBottom = markerLine;
+        int sectionEnd = markerLine;
         if (anchorPosition >= 0) {
             markerLine = slm.fillToStart(leadingEdge, markerLine, anchorPosition, sd, state);
         }
@@ -817,7 +958,7 @@ public class LayoutManager extends RecyclerView.LayoutManager {
                 }
             }
             markerLine = layoutHeaderTowardsStart(header, leadingEdge, markerLine, headerOffset,
-                    sectionBottom, sd, state);
+                    sectionEnd, sd, state);
 
             attachHeaderForStart(header, leadingEdge, sd, state);
         }
@@ -873,11 +1014,11 @@ public class LayoutManager extends RecyclerView.LayoutManager {
         int markerLine;
         int anchorPosition = getPosition(anchor);
         if (anchorPosition == sd.firstPosition) {
-            markerLine = getDecoratedTop(anchor);
+            markerLine = isVerticalOrientation() ? getDecoratedTop(anchor) : getDecoratedLeft(anchor);
         } else {
             if (anchorPosition - 1 == sd.firstPosition && sd.hasHeader) {
                 // Already at first content position, so no more to do.
-                markerLine = getDecoratedTop(anchor);
+                markerLine = isVerticalOrientation() ? getDecoratedTop(anchor) : getDecoratedLeft(anchor);
             } else {
                 markerLine = slm.finishFillToStart(leadingEdge, anchor, sd, state);
             }
@@ -932,6 +1073,7 @@ public class LayoutManager extends RecyclerView.LayoutManager {
      * @param sfp Section identifier.
      * @return Header, or null if not found.
      */
+    @Nullable
     private View findAttachedHeaderForSectionFromEnd(int sfp) {
         for (int i = getChildCount() - 1; i >= 0; i--) {
             View child = getChildAt(i);
@@ -955,6 +1097,7 @@ public class LayoutManager extends RecyclerView.LayoutManager {
      * @param sfp Section identifier.
      * @return Header, or null if not found.
      */
+    @Nullable
     private View findAttachedHeaderForSectionFromStart(int min, int max, int sfp) {
         if (max < min) {
             return null;
@@ -984,8 +1127,9 @@ public class LayoutManager extends RecyclerView.LayoutManager {
      * @param from       Edge to start looking from.
      * @return Null if no header or first item found, otherwise the found view.
      */
+    @Nullable
     private View findAttachedHeaderOrFirstViewForSection(final int sfp, int startIndex,
-            final Direction from) {
+                                                         final Direction from) {
         int childIndex = startIndex;
         int step = from == Direction.START ? 1 : -1;
         for (; 0 <= childIndex && childIndex < getChildCount(); childIndex += step) {
@@ -1011,17 +1155,25 @@ public class LayoutManager extends RecyclerView.LayoutManager {
         if (!isOverscrolled(state)) {
             return;
         }
+        boolean isVertical = isVerticalOrientation();
 
         // Shunt content down to the bottom of the screen.
-        int delta = getHeight() - getPaddingBottom() - bottomLine;
+        int delta = isVertical
+                ? getHeight() - getPaddingBottom() - bottomLine
+                : getWidth() - getPaddingRight() - bottomLine;
         offsetChildrenVertical(delta);
 
         // Fill back towards the top.
-        int topLine = fillToStart(0, state);
+        int startLine = fillToStart(0, state);
+        int paddingStart = isVertical ? getPaddingTop() : getPaddingStart();
 
-        if (topLine > getPaddingTop()) {
+        if (startLine > paddingStart) {
             // Not enough content to fill all the way back up so we shunt it back up.
-            offsetChildrenVertical(getPaddingTop() - topLine);
+            if (isVertical) {
+                offsetChildrenVertical(paddingStart - startLine);
+            } else {
+                offsetChildrenHorizontal(paddingStart - startLine);
+            }
         }
     }
 
@@ -1098,15 +1250,22 @@ public class LayoutManager extends RecyclerView.LayoutManager {
             return child;
         }
 
+        boolean isStartMoreOrMatchWithEnd = isVerticalOrientation()
+                ? getDecoratedBottom(first) <= getDecoratedTop(child)
+                : getDecoratedRight(first) <= getDecoratedLeft(child);
+
         if (firstParams.isHeaderInline() && !firstParams.isHeaderOverlay()) {
-            if (getDecoratedBottom(first) <= getDecoratedTop(child)) {
+            if (isStartMoreOrMatchWithEnd) {
                 return first;
             } else {
                 return child;
             }
         }
 
-        if (getDecoratedTop(child) < getDecoratedTop(first)) {
+        boolean isFirstMoreThanChild = isVerticalOrientation()
+                ? getDecoratedTop(child) < getDecoratedTop(first)
+                : getDecoratedLeft(child) < getDecoratedLeft(first);
+        if (isFirstMoreThanChild) {
             return child;
         }
 
@@ -1126,6 +1285,7 @@ public class LayoutManager extends RecyclerView.LayoutManager {
     }
 
     private float getFractionOfContentAbove(RecyclerView.State state, boolean ignorePosition) {
+        boolean isVertical = isVerticalOrientation();
         float fractionOffscreen = 0;
 
         View child = getChildAt(0);
@@ -1133,15 +1293,15 @@ public class LayoutManager extends RecyclerView.LayoutManager {
         final int anchorPosition = getPosition(child);
         int numBeforeAnchor = 0;
 
-        float top = getDecoratedTop(child);
-        float bottom = getDecoratedBottom(child);
-        if (bottom < 0) {
+        float start = isVertical ? getDecoratedTop(child) : getDecoratedLeft(child);
+        float end = isVertical ? getDecoratedBottom(child) : getDecoratedRight(child);
+        if (end < 0) {
             fractionOffscreen = 1;
-        } else if (0 <= top) {
+        } else if (0 <= start) {
             fractionOffscreen = 0;
         } else {
-            float height = getDecoratedMeasuredHeight(child);
-            fractionOffscreen = -top / height;
+            float size = isVertical ? getDecoratedMeasuredHeight(child) : getDecoratedMeasuredWidth(child);
+            fractionOffscreen = -start / size;
         }
         SectionData sd = new SectionData(this, child);
         if (sd.headerParams.isHeader && sd.headerParams.isHeaderInline()) {
@@ -1164,15 +1324,15 @@ public class LayoutManager extends RecyclerView.LayoutManager {
                 numBeforeAnchor += 1;
             }
 
-            top = getDecoratedTop(child);
-            bottom = getDecoratedBottom(child);
-            if (bottom < 0) {
+            start = isVertical ? getDecoratedTop(child) : getDecoratedLeft(child);
+            end = isVertical ? getDecoratedBottom(child) : getDecoratedRight(child);
+            if (end < 0) {
                 fractionOffscreen += 1;
-            } else if (0 <= top) {
+            } else if (0 <= start) {
                 continue;
             } else {
-                float height = getDecoratedMeasuredHeight(child);
-                fractionOffscreen += -top / height;
+                float size = isVertical ? getDecoratedMeasuredHeight(child) : getDecoratedMeasuredWidth(child);
+                fractionOffscreen += -start / size;
             }
 
             if (!lp.isHeader) {
@@ -1188,7 +1348,8 @@ public class LayoutManager extends RecyclerView.LayoutManager {
     }
 
     private float getFractionOfContentBelow(RecyclerView.State state, boolean ignorePosition) {
-        final float parentHeight = getHeight();
+        boolean isVertical = isVerticalOrientation();
+        final float parentSize = isVertical ? getHeight() : getWidth();
         View child = getChildAt(getChildCount() - 1);
 
         final int anchorPosition = getPosition(child);
@@ -1212,15 +1373,16 @@ public class LayoutManager extends RecyclerView.LayoutManager {
                 countAfter += 1;
             }
 
-            float bottom = getDecoratedBottom(child);
-            float top = getDecoratedTop(child);
-            if (bottom <= parentHeight) {
+            float end = isVertical ? getDecoratedBottom(child) : getDecoratedRight(child);
+            float start = isVertical ? getDecoratedTop(child) : getDecoratedLeft(child);
+
+            if (end <= parentSize) {
                 continue;
-            } else if (parentHeight < top) {
+            } else if (parentSize < start) {
                 fractionOffscreen += 1;
             } else {
-                float height = getDecoratedMeasuredHeight(child);
-                fractionOffscreen += (bottom - parentHeight) / height;
+                float size = isVertical ? getDecoratedMeasuredHeight(child) : getDecoratedMeasuredWidth(child);
+                fractionOffscreen += (end - parentSize) / size;
             }
 
             if (!lp.isHeader) {
@@ -1297,11 +1459,15 @@ public class LayoutManager extends RecyclerView.LayoutManager {
         if (getChildCount() == 0) {
             return false;
         }
-
+        final boolean isVertical = isVerticalOrientation();
         final View firstVisibleView = findFirstVisibleItem();
         final boolean firstVisibleIsFirstItem = getPosition(firstVisibleView) == 0;
-        final boolean firstVisibleAfterStart = getDecoratedTop(firstVisibleView) > getPaddingTop();
-        final boolean firstVisibleAtStart = getDecoratedTop(firstVisibleView) == getPaddingTop();
+        final boolean firstVisibleAfterStart = isVertical
+                ? getDecoratedTop(firstVisibleView) > getPaddingTop()
+                : getDecoratedLeft(firstVisibleView) > getPaddingLeft();
+        final boolean firstVisibleAtStart = isVertical
+                ? getDecoratedTop(firstVisibleView) == getPaddingTop()
+                : getDecoratedLeft(firstVisibleView) == getPaddingLeft();
 
         if (firstVisibleIsFirstItem && firstVisibleAfterStart) {
             return true;
@@ -1311,8 +1477,9 @@ public class LayoutManager extends RecyclerView.LayoutManager {
 
         final View lastVisibleView = findLastVisibleItem();
         final boolean lastVisibleIsLastItem = getPosition(lastVisibleView) == itemCount - 1;
-        final boolean lastVisibleBeforeEnd =
-                getDecoratedBottom(lastVisibleView) < getHeight() - getPaddingBottom();
+        final boolean lastVisibleBeforeEnd = isVertical
+                ? getDecoratedBottom(lastVisibleView) < getHeight() - getPaddingBottom()
+                : getDecoratedRight(lastVisibleView) < getWidth() - getPaddingRight();
 
         if (lastVisibleIsLastItem && lastVisibleBeforeEnd) {
             return true;
@@ -1329,7 +1496,8 @@ public class LayoutManager extends RecyclerView.LayoutManager {
      *                       line is before the leading edge then the end of the data set has been
      */
     private int layoutChildren(int anchorPosition, int borderLine, LayoutState state) {
-        final int height = getHeight();
+        boolean isVertical = isVerticalOrientation();
+        final int size = isVertical ? getHeight() : getWidth();
 
         final LayoutState.View anchor = state.getView(anchorPosition);
         state.cacheView(anchorPosition, anchor.view);
@@ -1351,22 +1519,23 @@ public class LayoutManager extends RecyclerView.LayoutManager {
         }
 
         // Layout first section to end.
-        markerLine = slm.fillToEnd(height, markerLine, contentPosition, sd, state);
+        markerLine = slm.fillToEnd(size, markerLine, contentPosition, sd, state);
 
+        int decoratedEnd = isVertical ? getDecoratedBottom(first.view) : getDecoratedRight(first.view);
         if (sd.hasHeader && anchorPosition != sd.firstPosition) {
             int offset = slm.computeHeaderOffset(contentPosition, sd, state);
             layoutHeaderTowardsStart(first.view, 0, borderLine, offset, markerLine, sd, state);
         } else {
-            markerLine = Math.max(markerLine, getDecoratedBottom(first.view));
+            markerLine = Math.max(markerLine, decoratedEnd);
         }
 
-        if (sd.hasHeader && getDecoratedBottom(first.view) > 0) {
+        if (sd.hasHeader && decoratedEnd > 0) {
             addView(first.view);
             state.decacheView(sd.firstPosition);
         }
 
         // Layout the rest.
-        markerLine = fillNextSectionToEnd(height, markerLine, state);
+        markerLine = fillNextSectionToEnd(size, markerLine, state);
 
         return markerLine;
     }
@@ -1381,19 +1550,28 @@ public class LayoutManager extends RecyclerView.LayoutManager {
      * @return Line at which to start filling out the section's content.
      */
     private int layoutHeaderTowardsEnd(View header, int markerLine, SectionData sd,
-            LayoutState state) {
+                                       LayoutState state) {
+        boolean isVertical = isVerticalOrientation();
         Rect r = setHeaderRectSides(mRect, sd, state);
 
-        r.top = markerLine;
-        r.bottom = r.top + sd.headerHeight;
-
-        if (sd.headerParams.isHeaderInline() && !sd.headerParams.isHeaderOverlay()) {
-            markerLine = r.bottom;
+        if (isVertical) {
+            r.top = markerLine;
+            r.bottom = r.top + sd.getHeaderSize();
+        } else {
+            r.left = markerLine;
+            r.right = r.left + sd.getHeaderSize();
         }
 
-        if (sd.headerParams.isHeaderSticky() && r.top < 0) {
+        if (sd.headerParams.isHeaderInline() && !sd.headerParams.isHeaderOverlay()) {
+            markerLine = isVertical ? r.bottom : r.right;
+        }
+
+        if (sd.headerParams.isHeaderSticky() && r.top < 0 && isVertical) {
             r.top = 0;
-            r.bottom = r.top + sd.headerHeight;
+            r.bottom = r.top + sd.getHeaderSize();
+        } else if (sd.headerParams.isHeaderSticky() && r.left < 0 && !isVertical) {
+            r.left = 0;
+            r.right = r.left + sd.getHeaderSize();
         }
 
         layoutDecorated(header, r.left, r.top, r.right, r.bottom);
@@ -1412,88 +1590,163 @@ public class LayoutManager extends RecyclerView.LayoutManager {
      * @return Top of the section including the header.
      */
     private int layoutHeaderTowardsStart(View header, int leadingEdge, int markerLine, int offset,
-            int sectionBottom, SectionData sd, LayoutState state) {
+                                         int sectionEnd, SectionData sd, LayoutState state) {
+        boolean isVertical = isVerticalOrientation();
         Rect r = setHeaderRectSides(mRect, sd, state);
 
         if (sd.headerParams.isHeaderInline() && !sd.headerParams.isHeaderOverlay()) {
-            r.bottom = markerLine;
-            r.top = r.bottom - sd.headerHeight;
+            if (isVertical) {
+                r.bottom = markerLine;
+                r.top = r.bottom - sd.getHeaderSize();
+            } else {
+                r.right = markerLine;
+                r.left = r.right + sd.getHeaderSize();
+            }
         } else if (offset <= 0) {
-            r.top = markerLine + offset;
-            r.bottom = r.top + sd.headerHeight;
+            if (isVertical) {
+                r.top = markerLine + offset;
+                r.bottom = r.top + sd.getHeaderSize();
+            } else {
+                r.left = markerLine + offset;
+                r.right = r.left + sd.getHeaderSize();
+            }
         } else {
-            r.bottom = leadingEdge;
-            r.top = r.bottom - sd.headerHeight;
+            if (isVertical) {
+                r.bottom = leadingEdge;
+                r.top = r.bottom - sd.getHeaderSize();
+            } else {
+                r.left = leadingEdge;
+                r.right = r.left + sd.getHeaderSize();
+            }
         }
+        boolean isStartLessThanLeadingEdge = isVertical ? r.top < leadingEdge : r.left < leadingEdge;
 
-        if (sd.headerParams.isHeaderSticky() && r.top < leadingEdge &&
+        if (sd.headerParams.isHeaderSticky() && isStartLessThanLeadingEdge &&
                 sd.firstPosition != state.getRecyclerState().getTargetScrollPosition()) {
-            r.top = leadingEdge;
-            r.bottom = r.top + sd.headerHeight;
+            if (isVertical) {
+                r.top = leadingEdge;
+                r.bottom = r.top + sd.getHeaderSize();
+            } else {
+                r.left = leadingEdge;
+                r.right = r.left + sd.getHeaderSize();
+            }
             if (sd.headerParams.isHeaderInline() && !sd.headerParams.isHeaderOverlay()) {
-                markerLine -= sd.headerHeight;
+                markerLine -= sd.getHeaderSize();
             }
         }
 
-        if (r.bottom > sectionBottom) {
-            r.bottom = sectionBottom;
-            r.top = r.bottom - sd.headerHeight;
+        if (isVertical && r.bottom > sectionEnd) {
+            r.bottom = sectionEnd;
+            r.top = r.bottom - sd.getHeaderSize();
+        } else if (r.right > sectionEnd && !isVertical) {
+            r.right = sectionEnd;
+            r.left = r.right - sd.getHeaderSize();
         }
 
         layoutDecorated(header, r.left, r.top, r.right, r.bottom);
 
-        return Math.min(r.top, markerLine);
+        return isVertical ? Math.min(r.top, markerLine) : Math.min(r.left, markerLine);
     }
 
     private Rect setHeaderRectSides(Rect r, SectionData sd, LayoutState state) {
         final int paddingLeft = getPaddingLeft();
         final int paddingRight = getPaddingRight();
+        final int paddingTop = getPaddingTop();
+        final int paddingBottom = getPaddingBottom();
 
-        if (sd.headerParams.isHeaderEndAligned()) {
-            // Position header from end edge.
-            if (!sd.headerParams.isHeaderOverlay() && !sd.headerParams.headerEndMarginIsAuto
-                    && sd.marginEnd > 0) {
-                // Position inside end margin.
-                if (state.isLTR) {
-                    r.left = getWidth() - sd.marginEnd - paddingRight;
-                    r.right = r.left + sd.headerWidth;
+        if (isVerticalOrientation()) {
+            if (sd.headerParams.isHeaderEndAligned()) {
+                // Position header from end edge.
+                if (!sd.headerParams.isHeaderOverlay() && !sd.headerParams.headerEndMarginIsAuto
+                        && sd.marginEnd > 0) {
+                    // Position inside end margin.
+                    if (state.isLTR) {
+                        r.left = getWidth() - sd.marginEnd - paddingRight;
+                        r.right = r.left + sd.getHeaderWidth();
+                    } else {
+                        r.right = sd.marginEnd + paddingLeft;
+                        r.left = r.right - sd.getHeaderWidth();
+                    }
+                } else if (state.isLTR) {
+                    r.right = getWidth() - paddingRight;
+                    r.left = r.right - sd.getHeaderWidth();
                 } else {
-                    r.right = sd.marginEnd + paddingLeft;
-                    r.left = r.right - sd.headerWidth;
+                    r.left = paddingLeft;
+                    r.right = r.left + sd.getHeaderWidth();
                 }
-            } else if (state.isLTR) {
-                r.right = getWidth() - paddingRight;
-                r.left = r.right - sd.headerWidth;
-            } else {
-                r.left = paddingLeft;
-                r.right = r.left + sd.headerWidth;
-            }
-        } else if (sd.headerParams.isHeaderStartAligned()) {
-            // Position header from start edge.
-            if (!sd.headerParams.isHeaderOverlay() && !sd.headerParams.headerStartMarginIsAuto
-                    && sd.marginStart > 0) {
-                // Position inside start margin.
-                if (state.isLTR) {
-                    r.right = sd.marginStart + paddingLeft;
-                    r.left = r.right - sd.headerWidth;
+            } else if (sd.headerParams.isHeaderStartAligned()) {
+                // Position header from start edge.
+                if (!sd.headerParams.isHeaderOverlay() && !sd.headerParams.headerStartMarginIsAuto
+                        && sd.marginStart > 0) {
+                    // Position inside start margin.
+                    if (state.isLTR) {
+                        r.right = sd.marginStart + paddingLeft;
+                        r.left = r.right - sd.getHeaderWidth();
+                    } else {
+                        r.left = getWidth() - sd.marginStart - paddingRight;
+                        r.right = r.left + sd.getHeaderWidth();
+                    }
+                } else if (state.isLTR) {
+                    r.left = paddingLeft;
+                    r.right = r.left + sd.getHeaderWidth();
                 } else {
-                    r.left = getWidth() - sd.marginStart - paddingRight;
-                    r.right = r.left + sd.headerWidth;
+                    r.right = getWidth() - paddingRight;
+                    r.left = r.right - sd.getHeaderWidth();
                 }
-            } else if (state.isLTR) {
-                r.left = paddingLeft;
-                r.right = r.left + sd.headerWidth;
             } else {
-                r.right = getWidth() - paddingRight;
-                r.left = r.right - sd.headerWidth;
+                // Header is not aligned to a directed edge and assumed to fill the width available.
+                r.left = paddingLeft;
+                r.right = r.left + sd.getHeaderWidth();
             }
+
+            return r;
         } else {
-            // Header is not aligned to a directed edge and assumed to fill the width available.
-            r.left = paddingLeft;
-            r.right = r.left + sd.headerWidth;
-        }
+            if (sd.headerParams.isHeaderEndAligned()) {
+                // Position header from end edge.
+                if (!sd.headerParams.isHeaderOverlay() && !sd.headerParams.headerEndMarginIsAuto
+                        && sd.marginEnd > 0) {
+                    // Position inside end margin.
+                    if (state.isLTR) {
+                        r.top = getHeight() - sd.marginEnd - paddingBottom;
+                        r.bottom = r.top + sd.getHeaderWidth();
+                    } else {
+                        r.top = sd.marginEnd + paddingTop;
+                        r.bottom = r.top - sd.getHeaderWidth();
+                    }
+                } else if (state.isLTR) {
+                    r.bottom = getHeight() - paddingBottom;
+                    r.top = r.bottom - sd.getHeaderWidth();
+                } else {
+                    r.top = paddingTop;
+                    r.bottom = r.top + sd.getHeaderWidth();
+                }
+            } else if (sd.headerParams.isHeaderStartAligned()) {
+                // Position header from start edge.
+                if (!sd.headerParams.isHeaderOverlay() && !sd.headerParams.headerStartMarginIsAuto
+                        && sd.marginStart > 0) {
+                    // Position inside start margin.
+                    if (state.isLTR) {
+                        r.bottom = sd.marginStart + paddingBottom;
+                        r.top = r.bottom - sd.getHeaderWidth();
+                    } else {
+                        r.top = getHeight() - sd.marginStart - paddingTop;
+                        r.bottom = r.top + sd.getHeaderWidth();
+                    }
+                } else if (state.isLTR) {
+                    r.top = paddingTop;
+                    r.bottom = r.top + sd.getHeaderWidth();
+                } else {
+                    r.bottom = getHeight() - paddingTop;
+                    r.top = r.bottom - sd.getHeaderWidth();
+                }
+            } else {
+                // Header is not aligned to a directed edge and assumed to fill the width available.
+                r.top = paddingTop;
+                r.bottom = r.top + sd.getHeaderWidth();
+            }
 
-        return r;
+            return r;
+        }
     }
 
     /**
@@ -1502,10 +1755,13 @@ public class LayoutManager extends RecyclerView.LayoutManager {
      * @param state Layout state.
      */
     private void trimEnd(LayoutState state) {
+        boolean isVertical = isVerticalOrientation();
         int height = getHeight();
+        int width = getWidth();
         for (int i = getChildCount() - 1; i >= 0; i--) {
             View child = getChildAt(i);
-            if (getDecoratedTop(child) >= height) {
+            if (isVertical && getDecoratedTop(child) >= height
+                    || !isVertical && getDecoratedLeft(child) >= width) {
                 removeAndRecycleView(child, state.recycler);
             } else {
                 if (!((LayoutParams) child.getLayoutParams()).isHeader) {
@@ -1523,10 +1779,12 @@ public class LayoutManager extends RecyclerView.LayoutManager {
     private void trimStart(LayoutState state) {
         // Find the first view visible on the screen.
         View anchor = null;
+        boolean isVertical = isVerticalOrientation();
         int anchorIndex = 0;
         for (int i = 0; i < getChildCount(); i++) {
             View look = getChildAt(i);
-            if (getDecoratedBottom(look) > 0) {
+            if (isVertical && getDecoratedBottom(look) > 0
+                    || !isVertical && getDecoratedRight(look) > 0) {
                 anchor = look;
                 anchorIndex = i;
                 break;
@@ -1560,11 +1818,13 @@ public class LayoutManager extends RecyclerView.LayoutManager {
 
         View header = findAttachedHeaderForSection(sfp, Direction.START);
         if (header != null) {
-            if (getDecoratedTop(header) < 0) {
+            if (isVertical && getDecoratedTop(header) < 0
+                    || !isVertical && getDecoratedLeft(header) < 0) {
                 updateHeaderForTrimFromStart(header);
             }
 
-            if (getDecoratedBottom(header) <= 0) {
+            if (isVertical && getDecoratedBottom(header) <= 0
+                    || !isVertical && getDecoratedRight(header) <= 0) {
                 removeAndRecycleView(header, state.recycler);
             }
         }
@@ -1603,7 +1863,8 @@ public class LayoutManager extends RecyclerView.LayoutManager {
         detachView(header);
         attachView(header, -1);
 
-        return Math.max(markerLine, getDecoratedBottom(header));
+        int decoratedEnd = isVerticalOrientation() ? getDecoratedBottom(header) : getDecoratedRight(header);
+        return Math.max(markerLine, decoratedEnd);
     }
 
     /**
@@ -1617,14 +1878,15 @@ public class LayoutManager extends RecyclerView.LayoutManager {
      * @return Updated line for the start of the section content including the header.
      */
     private int updateHeaderForStart(View header, int leadingEdge, int markerLine, SectionData sd,
-            LayoutState state) {
+                                     LayoutState state) {
         if (!sd.hasHeader) {
             return markerLine;
         }
 
         SectionLayoutManager slm = getSlm(sd);
         int sli = findLastIndexForSection(sd.firstPosition);
-        int sectionBottom = getHeight();
+        boolean isVertical = isVerticalOrientation();
+        int sectionEnd = isVertical ? getHeight() : getWidth();
         for (int i = sli == -1 ? 0 : sli; i < getChildCount(); i++) {
             View view = getChildAt(i);
             LayoutParams params = (LayoutParams) view.getLayoutParams();
@@ -1633,9 +1895,9 @@ public class LayoutManager extends RecyclerView.LayoutManager {
                         params.getTestedFirstPosition(), i,
                         Direction.START);
                 if (first == null) {
-                    sectionBottom = getDecoratedTop(view);
+                    sectionEnd = isVertical ? getDecoratedTop(view) : getDecoratedLeft(view);
                 } else {
-                    sectionBottom = getDecoratedTop(first);
+                    sectionEnd = isVertical ? getDecoratedTop(first) : getDecoratedLeft(first);
                 }
                 break;
             }
@@ -1643,7 +1905,7 @@ public class LayoutManager extends RecyclerView.LayoutManager {
 
         // Fix erroneous marker line position with empty section.
         if (sli == -1 && sd.headerParams.isHeaderInline() && !sd.headerParams.isHeaderOverlay()) {
-            markerLine = sectionBottom;
+            markerLine = sectionEnd;
         }
 
         int offset = 0;
@@ -1657,7 +1919,7 @@ public class LayoutManager extends RecyclerView.LayoutManager {
         }
 
         markerLine = layoutHeaderTowardsStart(header, leadingEdge, markerLine, offset,
-                sectionBottom, sd, state);
+                sectionEnd, sd, state);
 
         attachHeaderForStart(header, leadingEdge, sd, state);
 
@@ -1676,25 +1938,47 @@ public class LayoutManager extends RecyclerView.LayoutManager {
         }
 
         SectionLayoutManager slm = getSlm(sd);
-        final int sectionBottom = slm.getLowestEdge(sd.firstPosition, slp, getHeight());
-        final int sectionTop = slm.getHighestEdge(sd.firstPosition, 0, 0);
+        boolean isVertical = isVerticalOrientation();
+        final int sectionEnd = isVertical
+                ? slm.getLowestEdge(sd.firstPosition, slp, getHeight())
+                : slm.getLowestEdge(sd.firstPosition, slp, getWidth());
+        final int sectionStart = slm.getHighestEdge(sd.firstPosition, 0, 0);
 
         final int height = getDecoratedMeasuredHeight(header);
+        final int width = getDecoratedMeasuredWidth(header);
         if ((sd.headerParams.isHeaderInline() && !sd.headerParams.isHeaderOverlay())
-                || (sectionBottom - sectionTop) >= height) {
+                || isVertical && (sectionEnd - sectionStart) >= height) {
+
             final int left = getDecoratedLeft(header);
             final int right = getDecoratedRight(header);
 
             int top = 0;
             int bottom = top + height;
 
-            if (bottom > sectionBottom) {
-                bottom = sectionBottom;
+            if (bottom > sectionEnd) {
+                bottom = sectionEnd;
                 top = bottom - height;
             }
 
             layoutDecorated(header, left, top, right, bottom);
+        } else if ((sd.headerParams.isHeaderInline() && !sd.headerParams.isHeaderOverlay())
+                || !isVertical && (sectionEnd - sectionStart) >= width) {
+            final int top = getDecoratedTop(header);
+            final int bottom = getDecoratedBottom(header);
+            int left = 0;
+            int right = left + width;
+
+            if (right > sectionEnd) {
+                right = sectionEnd;
+                left = right - width;
+            }
+
+            layoutDecorated(header, left, top, right, bottom);
         }
+    }
+
+    public boolean isVerticalOrientation() {
+        return mOrientation == OrientationHelper.VERTICAL;
     }
 
     public enum Direction {
@@ -1752,7 +2036,8 @@ public class LayoutManager extends RecyclerView.LayoutManager {
 
         public boolean isHeader;
 
-        public @HeaderDisplayOptions int headerDisplay;
+        public @HeaderDisplayOptions
+        int headerDisplay;
 
         public int headerMarginEnd;
 

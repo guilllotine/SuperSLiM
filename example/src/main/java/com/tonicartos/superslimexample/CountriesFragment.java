@@ -10,7 +10,6 @@ import android.widget.Toast;
 
 import com.tonicartos.superslim.GridSLM;
 import com.tonicartos.superslim.LayoutManager;
-import com.tonicartos.superslim.LinearSLM;
 import com.tonicartos.superslim.SectionLayoutManager;
 
 import java.util.Random;
@@ -85,7 +84,7 @@ public class CountriesFragment extends Fragment {
         }
 
         mViews = new ViewHolder(view);
-        mViews.initViews(new LayoutManager(getActivity()));
+        mViews.initViews(new LayoutManager(getActivity(), RecyclerView.HORIZONTAL));
         mAdapter = new CountryNamesAdapter(getActivity(), mHeaderDisplay);
         mAdapter.setMarginsFixed(mAreMarginsFixed);
         mAdapter.setHeaderDisplay(mHeaderDisplay);

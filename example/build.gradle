@@ -1,8 +1,8 @@
 apply plugin: 'com.android.application'
 
 android {
-    compileSdkVersion 21
-    buildToolsVersion "22.0.1"
+    compileSdkVersion 22
+    buildToolsVersion '25.0.0'
     buildTypes {
         release {
             minifyEnabled false
@@ -16,7 +16,7 @@ android {
         applicationId 'com.tonicartos.superslim.example'
         versionCode 1
         versionName '0.1'
-        minSdkVersion 9
+        minSdkVersion 16
         targetSdkVersion 21
     }
 }

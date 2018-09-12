@@ -1,14 +1,14 @@
 package com.tonicartos.superslimexample;
 
-import com.tonicartos.superslim.GridSLM;
-import com.tonicartos.superslim.LinearSLM;
-
 import android.content.Context;
 import android.support.v7.widget.RecyclerView;
 import android.text.TextUtils;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+
+import com.tonicartos.superslim.GridSLM;
+import com.tonicartos.superslim.LinearSLM;
 
 import java.util.ArrayList;
 
@@ -91,16 +91,15 @@ public class CountryNamesAdapter extends RecyclerView.Adapter<CountryViewHolder>
         if (item.isHeader) {
             lp.headerDisplay = mHeaderDisplay;
             if (lp.isHeaderInline() || (mMarginsFixed && !lp.isHeaderOverlay())) {
-                lp.width = ViewGroup.LayoutParams.MATCH_PARENT;
+                lp.height = ViewGroup.LayoutParams.MATCH_PARENT;
             } else {
-                lp.width = ViewGroup.LayoutParams.WRAP_CONTENT;
+                lp.height = ViewGroup.LayoutParams.WRAP_CONTENT;
             }
 
             lp.headerEndMarginIsAuto = !mMarginsFixed;
             lp.headerStartMarginIsAuto = !mMarginsFixed;
         }
-        lp.setSlm(item.sectionManager == LINEAR ? LinearSLM.ID : GridSLM.ID);
-        lp.setColumnWidth(mContext.getResources().getDimensionPixelSize(R.dimen.grid_column_width));
+        lp.setSlm(LinearSLM.ID);
         lp.setFirstPosition(item.sectionFirstPosition);
         itemView.setLayoutParams(lp);
     }

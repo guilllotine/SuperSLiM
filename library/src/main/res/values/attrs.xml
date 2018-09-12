@@ -27,5 +27,9 @@
         <attr name="slm_grid_numColumns" format="enum|integer">
             <enum name="auto_fit" value="-1" />
         </attr>
+        <attr name="slm_grid_rowHeight" format="dimension" />
+        <attr name="slm_grid_numRows" format="enum|integer">
+            <enum name="auto_fit" value="-1" />
+        </attr>
     </declare-styleable>
 </resources>

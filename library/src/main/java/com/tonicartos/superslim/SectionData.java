@@ -9,15 +9,17 @@ public class SectionData {
 
     public final boolean hasHeader;
 
-    public final int minimumHeight;
+    private final int minimumHeight;
+
+    private final int minimumWidth;
 
     public final String sectionManager;
 
     public final int sectionManagerKind;
 
-    public final int headerWidth;
+    private final int headerWidth;
 
-    public final int headerHeight;
+    private final int headerHeight;
 
     public final int contentEnd;
 
@@ -27,9 +29,12 @@ public class SectionData {
 
     final int marginEnd;
 
+    private final boolean isVerticalOrientation;
+
     LayoutManager.LayoutParams headerParams;
 
     public SectionData(LayoutManager lm, View first) {
+        isVerticalOrientation = lm.isVerticalOrientation();
         final int paddingStart = lm.getPaddingStart();
         final int paddingEnd = lm.getPaddingEnd();
 
@@ -41,8 +46,10 @@ public class SectionData {
 
             if (!headerParams.isHeaderInline() || headerParams.isHeaderOverlay()) {
                 minimumHeight = headerHeight;
+                minimumWidth = headerWidth;
             } else {
                 minimumHeight = 0;
+                minimumWidth = 0;
             }
 
             if (headerParams.headerStartMarginIsAuto) {
@@ -65,6 +72,7 @@ public class SectionData {
             }
         } else {
             minimumHeight = 0;
+            minimumWidth = 0;
             headerHeight = 0;
             headerWidth = 0;
             marginStart = headerParams.headerMarginStart;
@@ -89,5 +97,25 @@ public class SectionData {
     public boolean sameSectionManager(LayoutManager.LayoutParams params) {
         return params.sectionManagerKind == sectionManagerKind ||
                 TextUtils.equals(params.sectionManager, sectionManager);
+    }
+
+    public int getHeaderSize() {
+        if (isVerticalOrientation) {
+            return headerHeight;
+        } else {
+            return headerWidth;
+        }
+    }
+
+    public int getHeaderWidth() {
+        return headerWidth;
+    }
+
+    public int getMinimumSize() {
+        if (isVerticalOrientation) {
+            return minimumHeight;
+        } else {
+            return minimumWidth;
+        }
     }
 }
