@@ -1,15 +1,15 @@
 package com.tonicartos.superslimexample;
 
-import com.tonicartos.superslim.LayoutManager;
-
 import android.os.Bundle;
-import android.support.v7.app.ActionBarActivity;
+import android.support.v7.app.AppCompatActivity;
 import android.support.v7.widget.Toolbar;
 import android.view.Menu;
 import android.view.MenuItem;
 
+import com.tonicartos.superslim.LayoutManager;
 
-public class MainActivity extends ActionBarActivity {
+
+public class MainActivity extends AppCompatActivity {
 
     private static final String TAG_COUNTRIES_FRAGMENT = "tag_countries_fragment";
 

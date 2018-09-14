@@ -71,23 +71,10 @@ public class CountriesFragment extends Fragment {
     public void onViewCreated(View view, Bundle savedInstanceState) {
         super.onViewCreated(view, savedInstanceState);
 
-        if (savedInstanceState != null) {
-            mHeaderDisplay = savedInstanceState
-                    .getInt(KEY_HEADER_POSITIONING,
-                            getResources().getInteger(R.integer.default_header_display));
-            mAreMarginsFixed = savedInstanceState
-                    .getBoolean(KEY_MARGINS_FIXED,
-                            getResources().getBoolean(R.bool.default_margins_fixed));
-        } else {
-            mHeaderDisplay = getResources().getInteger(R.integer.default_header_display);
-            mAreMarginsFixed = getResources().getBoolean(R.bool.default_margins_fixed);
-        }
-
         mViews = new ViewHolder(view);
         mViews.initViews(new LayoutManager(getActivity(), RecyclerView.HORIZONTAL));
         mAdapter = new CountryNamesAdapter(getActivity(), mHeaderDisplay);
         mAdapter.setMarginsFixed(mAreMarginsFixed);
-        mAdapter.setHeaderDisplay(mHeaderDisplay);
         mViews.setAdapter(mAdapter);
     }
 

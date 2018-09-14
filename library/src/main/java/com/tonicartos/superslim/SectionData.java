@@ -111,6 +111,10 @@ public class SectionData {
         return headerWidth;
     }
 
+    public int getHeaderHeight() {
+        return headerHeight;
+    }
+
     public int getMinimumSize() {
         if (isVerticalOrientation) {
             return minimumHeight;

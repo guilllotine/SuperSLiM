@@ -1708,17 +1708,17 @@ public class LayoutManager extends RecyclerView.LayoutManager {
                     // Position inside end margin.
                     if (state.isLTR) {
                         r.top = getHeight() - sd.marginEnd - paddingBottom;
-                        r.bottom = r.top + sd.getHeaderWidth();
+                        r.bottom = r.top + sd.getHeaderHeight();
                     } else {
                         r.top = sd.marginEnd + paddingTop;
-                        r.bottom = r.top - sd.getHeaderWidth();
+                        r.bottom = r.top - sd.getHeaderHeight();
                     }
                 } else if (state.isLTR) {
                     r.bottom = getHeight() - paddingBottom;
-                    r.top = r.bottom - sd.getHeaderWidth();
+                    r.top = r.bottom - sd.getHeaderHeight();
                 } else {
                     r.top = paddingTop;
-                    r.bottom = r.top + sd.getHeaderWidth();
+                    r.bottom = r.top + sd.getHeaderHeight();
                 }
             } else if (sd.headerParams.isHeaderStartAligned()) {
                 // Position header from start edge.
@@ -1727,22 +1727,22 @@ public class LayoutManager extends RecyclerView.LayoutManager {
                     // Position inside start margin.
                     if (state.isLTR) {
                         r.bottom = sd.marginStart + paddingBottom;
-                        r.top = r.bottom - sd.getHeaderWidth();
+                        r.top = r.bottom - sd.getHeaderHeight();
                     } else {
                         r.top = getHeight() - sd.marginStart - paddingTop;
-                        r.bottom = r.top + sd.getHeaderWidth();
+                        r.bottom = r.top + sd.getHeaderHeight();
                     }
                 } else if (state.isLTR) {
                     r.top = paddingTop;
-                    r.bottom = r.top + sd.getHeaderWidth();
+                    r.bottom = r.top + sd.getHeaderHeight();
                 } else {
                     r.bottom = getHeight() - paddingTop;
-                    r.top = r.bottom - sd.getHeaderWidth();
+                    r.top = r.bottom - sd.getHeaderHeight();
                 }
             } else {
                 // Header is not aligned to a directed edge and assumed to fill the width available.
                 r.top = paddingTop;
-                r.bottom = r.top + sd.getHeaderWidth();
+                r.bottom = r.top + sd.getHeaderHeight();
             }
 
             return r;
